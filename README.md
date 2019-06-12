@@ -29,5 +29,6 @@ Multi grain cutting. Interactions between grains due to heated and pre-stressed 
 **iwf_mfree_gpu_3d** contains parts of other free software packages:
 
 * David Eberlys Eigen solver, which is part of [GeometricTools](www.geometrictools.com/), was ported to CUDA. Boost License
-* The Axis Aligned Bounding Box Triangle cover test by [Tomas Akenine-Möller](http://cs.lth.se/tomas-akenine-moller/) is used in the hashing procedure for the contact algorithm. Public Domain.
+* The Axis Aligned Bounding Box Triangle cover test by [Tomas Akenine-Möller](http://cs.lth.se/tomas-akenine-moller/) is used in the hashing procedure for the contact algorithm. Public Domain. 
+* Ray Triangle Intersection Test, Möller–Trumbore algorithm, taken from [wikipedia](https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm).
 * The particles CUDA [example](https://github.com/zchee/cuda-sample/tree/master/5_Simulations/particles) by nVidia was adapted for one of the two available particle hashing codes. See [License](https://github.com/NVIDIA/cuda-samples/blob/master/LICENSE)
