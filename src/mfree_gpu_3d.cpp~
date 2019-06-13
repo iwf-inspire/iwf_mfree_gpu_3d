@@ -1,0 +1,336 @@
+#include <cuda_profiler_api.h>
+#include <iostream>
+#include <numeric>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <iostream>
+#include <cuda.h>
+#include <fenv.h>
+
+#include "blanking.h"
+#include "Benchmarks/benchmarks_HK.h"
+#include "Benchmarks/benchmarks_MR.h"
+#include "Benchmarks/benchmarks_classic.h"
+#include "Benchmarks/benchmarks_MatTest.h"
+#include "Benchmarks/benchmarks_test.h"
+#include "Benchmarks/benchmarks_Schaal.h"
+#include "Benchmarks/egt_utils.h"
+#include "debug.h"
+#include "vtk_writer.h"
+#include "grid_gpu_rothlin.h"
+#include "leap_frog.h"
+#include "test.h"
+#include "types.h"
+#include "optim_perf.h"
+#include "tests.h"
+#include "tool_3d_gpu.h"
+
+//globals (sue me!)
+std::vector<tool_3d_gpu *> global_tool;
+tool_forces *global_tool_forces = 0;
+tool_wear *global_tool_wear = 0;
+blanking *global_blanking = 0;
+
+float_t global_time_dt = 0;
+float_t global_time_final = 0;
+float_t global_time_current = 0;
+int global_time_step = 0;
+
+int poll_temp() {
+	FILE *in;
+	char buff[512];
+
+	if(!(in = popen("nvidia-smi | grep '[0-9][0-9]C' | awk '{print $3}' | sed 's/C//'", "r"))){
+		return -1;
+	}
+
+	if (fgets(buff, sizeof(buff), in)!=NULL){
+		int temp;
+		sscanf(buff, "%d", &temp);
+		pclose(in);
+
+		if (temp >= 82) {
+			exit(0);
+		}
+
+		return temp;
+	}
+
+	pclose(in);
+	return -1;
+}
+
+int main(int argc, char *argv[]) {
+
+	//	feenableexcept(FE_INVALID | FE_OVERFLOW);
+
+//	cell_test_green_hardblank_rep();
+//	exit(0);
+
+//	mat3x3_t T({1., 0., 0.,
+//		0., 1., 0.,
+//		0., 1., 0.});
+//
+//	T = glm::inverse(T);
+//	mat3x3_t B(1.);
+
+	system("mkdir results");
+	system("rm results/*.txt");
+	system("rm ./results/*");
+
+	//default cut, sim by nik
+	double rake_angle = 10.;
+	double clearance_angle = 8.;
+	double fillet = 0.002;
+	double speed = 83.333328*1e-5/500.*70.;	// = 0,000116667 cm/müSek = 1,16666m/s = 70m/min
+	int ny = 20;
+	double feed = 0.01;
+	int mat_num = 0;
+	double fric_mu = 0.35;
+
+#if defined Thermal_Conduction_Brookshaw && defined Thermal_Conduction_PSE	// Check #define Thermal_Conduction_Brookshaw & #define Thermal_Conduction_PSE from types.h
+	printf("Either define thermal conduction in types.h via Thermal_Conduction_Brookshaw OR Thermal_Conduction_PSE, but not BOTH!\n");
+	exit(-1);
+#endif
+
+	//	double rake_angle = 15.;
+	//	double clearance_angle = 15.;
+	//	double fillet = 0.00;
+	//	double speed = 83.333328*1e-5;
+	//	int ny = 30;
+
+	//	double rake_angle = 0.;
+	//	double clearance_angle = 15;
+	//	double fillet = 0.00375;
+	//	double speed = 83.333328*1e-5;
+	//	int ny = 30;
+
+	opterr = 0;
+	int c;
+
+	printf("number of arguments %d\n", argc);
+	for (int i = 0; i < argc; i++) {
+		printf("%s\n", argv[i]);
+	}
+
+	//scan for arguments
+	if (argc != 0) {
+		while ((c = getopt (argc, argv, "r:c:f:v:n:q:m:x:")) != -1) {
+			switch (c)
+			{
+			case 'r':
+				sscanf(optarg, "%lf", &rake_angle);
+				break;
+			case 'c':
+				sscanf(optarg, "%lf", &clearance_angle);
+				break;
+			case 'f':
+				sscanf(optarg, "%lf", &fillet);
+				break;
+			case 'v':
+				sscanf(optarg, "%lf", &speed);
+				break;
+			case 'n':
+				sscanf(optarg, "%d", &ny);
+				break;
+			case 'q':
+				sscanf(optarg, "%lf", &feed);
+				break;
+			case 'm':
+				sscanf(optarg, "%d", &mat_num);
+				break;
+			case 'x':
+				sscanf(optarg, "%lf", &fric_mu);
+				break;
+			}
+		}
+	}
+	//
+	//	printf("arguments received %.9g %.9g %.9g %.9g %.9g\n", (float_t) rake_angle, (float_t) clearance_angle, (float_t) fillet, (float_t) speed, (float_t) feed);
+
+	//hack to init cuda resources
+	cudaFree(0);
+
+	grid_base *grid;
+	//	particle_gpu *particles = 0; //setup_ref_cut(ny, &grid, rake_angle, clearance_angle, fillet, speed, feed);
+
+	//	particle_gpu *particles = setup_box(10, &grid);
+	//	particle_gpu *particles = setup_thermal(51, &grid);
+		particle_gpu *particles = setup_rings(50, &grid);
+	//	particle_gpu *particles = setup_disk(100, &grid);
+	//	particle_gpu *particles = setup_cylinder_impact(100, &grid, true);
+	//	particle_gpu *particles = setup_ring_contact(50, &grid);
+	//	particle_gpu *particles = setup_ring_contact(50, &grid);
+	//	particle_gpu *particles = setup_ball_impact(5, &grid);
+	//		particle_gpu *particles = setup_single_grain(&grid);
+	//	particle_gpu *particles = setup_single_dbg(&grid);
+	//	particle_gpu *particles = setup_single_grain_cubes(&grid);
+
+	//	particle_gpu *particles = test_new_blanking(&grid);
+	//		particle_gpu *particles = setup_single_grain_wheel(&grid);
+	//		particle_gpu *particles = setup_single_grain_wheel_dbg(&grid);
+//	particle_gpu *particles = setup_single_grain_wheel_pinto(&grid);
+	//	particle_gpu *particles = setup_single_grain_cubes(&grid);
+	//	particle_gpu *particles = setup_contact_test(&grid);
+
+//	particle_gpu *particles = setup_cut_schaal(&grid, mat_num, fric_mu);
+
+//	particle_gpu *particles = setup_single_grain_1wz_mr_trml_steady(&grid);
+//    particle_gpu *particles = setup_single_grain_5wz_mr_new(&grid);
+//	particle_gpu *particles = setup_single_grain_1wz_mr_new(&grid);
+//		particle_gpu *particles = setup_single_grain_1wz_realscale_mr(&grid);
+//	particle_gpu *particles = setup_single_grain_WZ_D851(&grid);		// Werkzeug von Mansur (aus vermessener Geometrie), Fr, 30.06.2018
+//		particle_gpu *particles = setup_single_grain_WZ_Ruettimann(&grid);	// Berechnung Single Grain wie in Dissertation Rüttimann; Di, 10.07.2018
+//	particle_gpu *particles = setup_single_grain_cubes(&grid);
+//		particle_gpu *particles = setup_single_grain_wheel_pinto(&grid, mat_num);
+
+//	particle_gpu *particles = setup_single_grain_1wz_mr_trml_steady(&grid);
+
+//	particle_gpu *particles = setup_mat_test_tensile_physical(&grid);
+
+//	particle_gpu *particles = setup_xwing_impact(&grid);
+
+	check_cuda_error("init\n");
+
+	if (global_tool.size() == 0) {
+		global_tool.push_back(new tool_3d_gpu());
+	}
+	leap_frog    *stepper = new leap_frog(particles->N, grid->num_cell());	// multiple tool structural, but single tool thermal!
+
+	cudaEvent_t start, stop, intermediate;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	cudaEventCreate(&intermediate);
+	cudaEventRecord(start);
+
+	int last_step = global_time_final/global_time_dt;
+//	int freq = last_step/1000;
+//	int freq = 1000;
+	int freq = last_step/120;
+//	int freq = 1;
+
+	freq = std::max(freq,1);
+
+#ifdef USE_DOUBLE
+	printf("this executable uses DOUBLE precision!\n");
+#else
+	printf("this executable uses SINGLE precision!\n");
+#endif
+
+#ifdef CSPM
+	printf("using CSPM\n");
+#endif
+
+#ifdef TVF
+	printf("using TVF\n");
+#endif
+
+#ifdef SURFACE
+	printf("disabling at boundaries TVF\n");
+#endif
+
+	unsigned int print_iter = 0;
+	for (int step = 0; step < last_step; step++) {
+
+		bool record_this_step = step % freq == 0;
+
+//		printf("%d\n", step);
+
+
+		if (step > 0) {
+//			stepper->step_dbg_tool(particles, grid, (record_this_step && global_tool_forces != 0));
+			stepper->step(particles, grid, (record_this_step && global_tool_forces != 0));
+		}
+
+//		if (step > 3) {
+//			exit(0);
+//		}
+
+		if (step == 100) {
+			cudaEventRecord(intermediate);
+			cudaEventSynchronize(intermediate);
+			float milliseconds = 0;
+			cudaEventElapsedTime(&milliseconds, start, intermediate);
+
+			float_t seconds_so_far = milliseconds/1e3;
+			float_t percent_done = 100*step/((float_t) last_step);
+			float_t time_left = seconds_so_far/percent_done*100;
+			printf("estimated time: %f seconds, which is %f hours\n", time_left, time_left/60./60.);
+		}
+
+		if (record_this_step) {
+			vtk_writer_write(particles, global_tool);		// write particles & tool(s) to VTK
+			check_cuda_error();
+
+			cudaEventRecord(intermediate);
+			cudaEventSynchronize(intermediate);
+			float milliseconds = 0;
+			cudaEventElapsedTime(&milliseconds, start, intermediate);
+
+			float_t seconds_so_far = milliseconds/1e3;
+			float_t percent_done = 100*step/((float_t) last_step);
+			float_t time_left = seconds_so_far/percent_done*100;
+			int temp = poll_temp();
+
+//			debug_dump_state_wear_normals(particles, global_time_step);
+//			debug_dump_tris(global_tool[0], global_time_step);
+
+			printf("%06d of %06d: %02.1f percent done, %.2f of est runtime %.2f, at temp %d\n",
+					step, last_step, percent_done, seconds_so_far, time_left, temp);
+
+			if (global_tool_forces != 0) {
+				global_tool_forces->report(print_iter);
+			}
+
+			if (global_tool_wear != 0) {
+				global_tool_wear->report(print_iter);
+			}
+
+			print_iter++;
+
+		}
+
+		global_time_step++;
+		global_time_current += global_time_dt;
+		//		printf("%d\n", global_step);
+	}
+
+	//	fclose(fp_wear);
+
+	check_cuda_error();
+
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+
+	printf("gpu time: (seconds) %f\n", milliseconds/1e3);
+
+	//	cudaProfilerStop();
+
+	return 0;
+}
+
+// printf chosen BLOCK_SIZES
+//	printf("BLOCK_SIZE: %u \n", BLOCK_SIZE);
+//	printf("UNIFIED_SIZE: %u \n", UNIFIED_SIZE);
+//	printf("BLOCK_SIZE_eos: %u \n",BLOCK_SIZE_eos);
+//	printf("BLOCK_SIZE_artif_stress: %u \n", BLOCK_SIZE_artif_stress);
+//	printf("BLOCK_SIZE_jaumann_rate: %u \n", BLOCK_SIZE_jaumann_rate);
+//	printf("BLOCK_SIZE_continuity: %u \n", BLOCK_SIZE_continuity);
+//	printf("BLOCK_SIZE_momentum: %u \n", BLOCK_SIZE_momentum);
+//	printf("BLOCK_SIZE_advection: %u \n", BLOCK_SIZE_advection);
+//	printf("BLOCK_SIZE_JC_RR: %u \n", BLOCK_SIZE_JC_RR);
+//	printf("BLOCK_SIZE_JC_OR: %u \n", BLOCK_SIZE_JC_OR);
+//	printf("BLOCK_SIZE_JC_OR_RR: %u \n", BLOCK_SIZE_JC_OR_RR);
+//	printf("BLOCK_SIZE_BC_thermal_tool: %u \n", BLOCK_SIZE_BC_thermal_tool);
+//	printf("BLOCK_SIZE_BC_thermal_particles: %u \n", BLOCK_SIZE_BC_thermal_particles);
+//	printf("BLOCK_SIZE_BC: %u \n", BLOCK_SIZE_BC);
+//	printf("BLOCK_SIZE_blanking: %u \n", BLOCK_SIZE_blanking);
+//	printf("BLOCK_SIZE_friction_heat: %u \n", BLOCK_SIZE_friction_heat);
+//	printf("BLOCK_SIZE_hash: %u \n", BLOCK_SIZE_hash);
+//	printf("BLOCK_SIZE_update_tool: %u \n", BLOCK_SIZE_update_tool);
+//	printf("BLOCK_SIZE_cells_test: %u \n", BLOCK_SIZE_cells_test);
+//	printf("BLOCK_SIZE_contact_force: %u \n", BLOCK_SIZE_contact_force);
+//	printf("BLOCK_SIZE_leapfrog: %u \n", BLOCK_SIZE_leapfrog);
