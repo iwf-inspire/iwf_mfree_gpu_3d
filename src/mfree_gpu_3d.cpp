@@ -110,9 +110,9 @@ int main(int argc, char *argv[]) {
 	//single and multigrain studies
 //----------------------------------------------------------------------
 //	particle_gpu *particles = setup_single_grain_1tool_realscale(&grid);
-//	particle_gpu *particles = setup_single_grain_1tool(&grid);
+	particle_gpu *particles = setup_single_grain_1tool(&grid);
 //	particle_gpu *particles = setup_single_grain_5tool(&grid);
-	particle_gpu *particles = setup_single_grain_1tool_trml_steady(&grid);
+//	particle_gpu *particles = setup_single_grain_1tool_trml_steady(&grid);
 
 	check_cuda_error("init\n");
 
