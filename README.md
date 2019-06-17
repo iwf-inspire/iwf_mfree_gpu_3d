@@ -12,11 +12,11 @@ Result frames can be viewed using [ParaView](https://www.paraview.org/) using th
 
 Single grain cutting, relasitic chip curling is achieved using linear complete kernels:
 
-![single](https://raw.githubusercontent.com/mroethli/iwf_mfree_gpu_3d/master/img/single.png)
+![single](https://raw.githubusercontent.com/mroethli/iwf_mfree_gpu_3d/master/img/single.jpg)
 
 Multi grain cutting. Interactions between grains due to heated and pre-stressed material can be studied.
 
-![multi](https://raw.githubusercontent.com/mroethli/iwf_mfree_gpu_3d/master/img/multi.png)
+![multi](https://raw.githubusercontent.com/mroethli/iwf_mfree_gpu_3d/master/img/multi.jpg)
 
 **iwf_mfree_gpu_3d** was tested on various versions of Ubuntu Linux. The only dependency is [GLM](https://glm.g-truc.net/0.9.9/index.html). Make files for both a Release version and a Debug build are provided. Tested under NVCC with the GCC suite as host compiler, but any C++11 compliant host compiler should suffice. **iwf_mfree_gpu_3d** was devleloped at [ETHZ](www.ethz.ch) by the following authors
 
