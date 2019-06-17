@@ -10,7 +10,7 @@ Parallelization on the GPU allows for dramatic runtime efficiency, bringing simu
 
 Result frames can be viewed using [ParaView](https://www.paraview.org/) using the legacy VTK format. Some typical result frames are shown below:
 
-Single grain cutting, relasitic chip curling is achieved using linear complete kernels:
+Single grain cutting, realistic chip curling is achieved using linear complete kernels:
 
 ![single](https://raw.githubusercontent.com/mroethli/iwf_mfree_gpu_3d/master/img/single.jpg)
 
